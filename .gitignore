@@ -1,0 +1,23 @@
+# Secrets — never push to GitHub
+.env
+deploy.py
+get_links.py
+get_gdrive_ids.py
+gdrive_token.json
+gdrive_credentials.json
+railway_env_vars.txt
+gdrive_links.txt
+LIVE_URLS.txt
+upload_to_gdrive.py
+
+# Large ML files — stored on Google Drive
+ml/
+
+# Python
+__pycache__/
+*.pyc
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/

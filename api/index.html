@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CIS-7 · Cosmic Intelligence System</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@200;300;400;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --void:#03040A;--hull:#07090F;--con:#090C16;
+  --am:#B87820;--am2:#6A4810;--am3:#F0A030;--am4:rgba(184,120,32,.10);
+  --st:#1E2438;--st2:#38405C;--st3:#7880A0;--st4:#B0B8D0;
+  --gr:#28B860;--rd:#C04040;--bl:#3878B8;
+  --tx:#B8B098;--txd:#484038;--txb:#E8DEC8;
+  --r:2px;
+}
+html,body{height:100%;overflow:hidden;background:var(--void);color:#D8D0B8;font-family:'Barlow Condensed',sans-serif;font-weight:400;font-size:14px}
+.mono{font-family:'Share Tech Mono',monospace}
+
+/* ─── THREE.JS CANVAS fills entire background ─── */
+#threeCanvas{position:fixed;inset:0;z-index:0}
+
+/* ─── COCKPIT ATMOSPHERIC LAYERS ─── */
+/* deep vignette - makes edges feel like hull */
+#vig{position:fixed;inset:0;z-index:1;pointer-events:none;
+  background:radial-gradient(ellipse 70% 60% at 50% 50%,transparent 0%,rgba(2,3,8,.6) 60%,rgba(1,2,5,.95) 100%)}
+/* side panel backing (dark cockpit walls) */
+#lwall{position:fixed;top:0;left:0;bottom:0;width:290px;z-index:2;pointer-events:none;
+  background:linear-gradient(90deg,rgba(4,6,12,.97) 0%,rgba(6,9,16,.88) 80%,transparent 100%);
+  border-right:1px solid rgba(50,64,100,.4)}
+#rwall{position:fixed;top:0;right:0;bottom:0;width:256px;z-index:2;pointer-events:none;
+  background:linear-gradient(270deg,rgba(4,6,12,.97) 0%,rgba(6,9,16,.88) 80%,transparent 100%);
+  border-left:1px solid rgba(50,64,100,.4)}
+/* header backing */
+#thead{position:fixed;top:0;left:0;right:0;height:44px;z-index:2;pointer-events:none;
+  background:linear-gradient(180deg,rgba(4,6,12,.99) 60%,transparent 100%);
+  border-bottom:1px solid rgba(80,100,140,.35)}
+/* golden accent line on header */
+#thead::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent 0%,rgba(184,120,32,.5) 20%,rgba(240,160,48,.9) 50%,rgba(184,120,32,.5) 80%,transparent 100%)}
+/* status bar backing */
+#tfoot{position:fixed;bottom:0;left:0;right:0;height:30px;z-index:2;pointer-events:none;
+  background:linear-gradient(0deg,rgba(4,6,12,.99) 60%,transparent 100%);
+  border-top:1px solid rgba(40,52,80,.4)}
+/* subtle CRT scan lines */
+#grain{position:fixed;inset:0;z-index:4;pointer-events:none;opacity:.022;
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,.03) 0px,rgba(255,255,255,.03) 1px,transparent 1px,transparent 3px)}
+/* scan FX flash on scan */
+#sfx{position:fixed;inset:0;z-index:5;pointer-events:none;opacity:0}
+#sfx.go{animation:sfxAnim 2s ease forwards}
+@keyframes sfxAnim{
+  0%{opacity:0;background:transparent}
+  10%{opacity:1;background:linear-gradient(180deg,transparent 0%,rgba(184,120,32,.07) 50%,transparent 100%);background-position:0 -100%}
+  90%{background-position:0 200%;opacity:.6}
+  100%{opacity:0}
+}
+
+/* ─── APP ─── */
+#app{position:relative;z-index:10;opacity:0;transition:opacity 1s;height:100vh;display:grid;grid-template-rows:44px 1fr 30px}
+#app.on{opacity:1}
+
+/* ─── HEADER ─── */
+.hdr{display:flex;align-items:center;padding:0 18px;gap:20px;position:relative;z-index:20}
+.hship{font-family:'Share Tech Mono',monospace;font-size:12px;color:#FFB840;letter-spacing:4px;flex-shrink:0;text-shadow:0 0 16px rgba(255,184,64,.5)}
+.hleds{display:flex;gap:16px;flex:1}
+.hled{font-family:'Share Tech Mono',monospace;font-size:10px;color:#B8C8E8;letter-spacing:1.5px;display:flex;align-items:center;gap:4px}
+.led{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.lg{background:var(--gr);box-shadow:0 0 6px var(--gr)}
+.la{background:var(--am3);animation:blk 2.2s infinite;box-shadow:0 0 5px var(--am3)}
+.loff{background:var(--st)}
+@keyframes blk{0%,100%{opacity:1}50%{opacity:.12}}
+.hdate{font-family:'Share Tech Mono',monospace;font-size:10px;color:#C89030;letter-spacing:2px;flex-shrink:0}
+
+/* ─── BRIDGE ─── */
+.bridge{display:grid;grid-template-columns:290px 1fr 256px;overflow:hidden;position:relative;z-index:15}
+
+/* ─── SIDE COLUMNS ─── */
+.col{padding:10px;display:flex;flex-direction:column;gap:7px;overflow-y:auto;overflow-x:hidden;position:relative;z-index:20;scroll-behavior:smooth}
+.col::-webkit-scrollbar{width:4px}
+.col::-webkit-scrollbar-thumb{background:#8A5820;border-radius:2px}
+
+/* ─── PANEL BLOCKS ─── */
+.pb{background:rgba(8,11,20,.80);border:1px solid rgba(50,68,110,.4);border-radius:var(--r);padding:8px;position:relative;overflow:visible;backdrop-filter:blur(2px)}
+.pb::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(80,100,160,.25),transparent)}
+
+/* ─── SECTION HEADS ─── */
+.sh{font-family:'Share Tech Mono',monospace;font-size:10px;color:#D8A030;letter-spacing:2px;padding-bottom:4px;margin-bottom:5px;display:flex;align-items:center;gap:4px;flex-shrink:0;position:relative}
+.sh::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,rgba(200,140,40,.6),rgba(200,140,40,.15),transparent)}
+.sh::before{content:'▸';color:var(--am3);font-size:8px;flex-shrink:0}
+
+/* ─── SLIDERS ─── */
+.ir{margin-bottom:6px}
+.il{display:flex;justify-content:space-between;margin-bottom:2px}
+.in{font-size:11px;color:#D8D8F0;letter-spacing:.4px;font-weight:400}
+.iv{font-family:'Share Tech Mono',monospace;font-size:11px;color:#FFD060;font-weight:600}
+input[type=range]{width:100%;height:2px;-webkit-appearance:none;background:rgba(60,80,130,.55);border-radius:1px;outline:none;cursor:pointer;display:block}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:9px;border-radius:50%;background:var(--am3);border:1px solid rgba(0,0,0,.5);cursor:pointer;box-shadow:0 0 5px rgba(240,160,48,.5)}
+
+/* ─── CAT SELECTS ─── */
+.catrow{display:flex;gap:6px;align-items:center;margin-bottom:5px}
+.catlab{font-size:11px;color:#D0D8F0;width:82px;flex-shrink:0;letter-spacing:.4px}
+.catsel{flex:1;background:rgba(7,9,16,.85);border:1px solid rgba(80,100,150,.6);color:#E0E8FF;font-family:'Share Tech Mono',monospace;font-size:11px;padding:4px 6px;outline:none;border-radius:var(--r)}
+.catsel option{background:#07090F}
+
+/* ─── BUTTONS ─── */
+.btn{width:100%;padding:13px 20px;background:rgba(184,120,32,.12);border:1px solid #C07820;color:#FFD060;font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:2px;cursor:pointer;transition:border-color .2s,background .2s,box-shadow .2s;border-radius:var(--r);display:block;position:relative;overflow:hidden;text-align:center;line-height:1.4;white-space:nowrap}
+.btn:hover{border-color:#FFD060;background:rgba(220,160,40,.15);box-shadow:0 0 12px rgba(255,190,50,.25)}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.22;cursor:not-allowed;pointer-events:none}
+.btn2{border-color:rgba(100,130,180,.6);color:#C0D0F0;background:rgba(40,60,100,.08);margin-top:6px}
+.btn2:hover{border-color:#A0B8E0;color:#D8E8FF;background:rgba(60,80,120,.15);box-shadow:none}
+
+/* ─── MODEL GRID ─── */
+.mgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:3px}
+.mtab{padding:5px 3px;background:rgba(7,9,16,.6);border:1px solid rgba(70,90,130,.45);color:#A0B0D0;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:.3px;cursor:pointer;transition:all .2s;border-radius:var(--r);text-align:center;line-height:1.3;position:relative}
+.mtab:hover:not(.loading){border-color:var(--st2);color:var(--tx)}
+.mtab.active{border-color:#FFB040;color:#FFD060;background:rgba(220,160,40,.16);box-shadow:0 0 10px rgba(240,170,40,.3)}
+.mtab.loading{opacity:.35;cursor:wait}
+.mtab.done{border-color:rgba(40,160,80,.3)}.mtab.done::after{content:'';position:absolute;top:3px;right:3px;width:3px;height:3px;border-radius:50%;background:#30C060;box-shadow:0 0 4px #30C060}
+.macc{display:block;font-size:10px;margin-top:2px;color:#FFB030;font-weight:600}
+
+/* ─── METRICS ─── */
+.mrow{display:flex;align-items:center;gap:5px;padding:3px 0;border-bottom:1px solid rgba(40,52,80,.12)}
+.mk{font-size:10px;color:#A8B4D0;width:56px;flex-shrink:0}
+.mbw{flex:1;height:2px;background:rgba(50,70,110,.45);border-radius:1px}
+.mb{height:100%;background:#D09030;transition:width .8s ease}
+.mp{font-family:'Share Tech Mono',monospace;font-size:10px;color:#FFB030;width:30px;text-align:right}
+
+/* ─── CENTER VIEWPORT ─── */
+.ctr{position:relative;z-index:5;display:flex;flex-direction:column;align-items:center;overflow:hidden}
+#planetCanvas{display:block;width:100%;height:260px;flex-shrink:0;cursor:grab}
+#planetCanvas:active{cursor:grabbing}
+
+/* HUD OVERLAYS */
+.hc{position:absolute;width:20px;height:20px;pointer-events:none;z-index:8}
+.hc-tl{top:5px;left:5px;border-top:1px solid rgba(184,120,32,.5);border-left:1px solid rgba(184,120,32,.5)}
+.hc-tr{top:5px;right:5px;border-top:1px solid rgba(184,120,32,.5);border-right:1px solid rgba(184,120,32,.5)}
+.hc-bl{bottom:5px;left:5px;border-bottom:1px solid rgba(184,120,32,.5);border-left:1px solid rgba(184,120,32,.5)}
+.hc-br{bottom:5px;right:5px;border-bottom:1px solid rgba(184,120,32,.5);border-right:1px solid rgba(184,120,32,.5)}
+.hud-cross{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:56px;height:56px;pointer-events:none;z-index:8;opacity:.18}
+.hud-cross::before,.hud-cross::after{content:'';position:absolute;background:rgba(184,120,32,.7)}
+.hud-cross::before{width:1px;height:100%;left:50%;top:0}
+.hud-cross::after{width:100%;height:1px;top:50%;left:0}
+.hud-ring{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:50%;border:1px solid rgba(184,120,32,.12);pointer-events:none;z-index:8;width:110px;height:110px}
+.hud-ring2{width:190px;height:190px;border-color:rgba(184,120,32,.06)}
+.hud-dist{position:absolute;top:10px;left:50%;transform:translateX(-50%);font-family:'Share Tech Mono',monospace;font-size:10px;color:rgba(240,180,60,.90);letter-spacing:2px;pointer-events:none;z-index:8;white-space:nowrap}
+.hud-lock{position:absolute;bottom:7px;left:50%;transform:translateX(-50%);font-family:'Share Tech Mono',monospace;font-size:10px;color:rgba(255,200,80,.95);letter-spacing:3px;pointer-events:none;z-index:8;opacity:0;transition:opacity .5s;white-space:nowrap}
+.hud-lock.show{opacity:1}
+
+/* ─── RESULT ZONE ─── */
+.rzone{width:100%;padding:8px 14px;display:flex;flex-direction:column;gap:6px;flex:1;overflow-y:auto}
+.rzone::-webkit-scrollbar{width:2px}
+.rzone::-webkit-scrollbar-thumb{background:var(--am2)}
+.rtop{display:flex;align-items:center;gap:12px}
+.rtext{flex:1;min-width:0}
+.rclass{font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:26px;letter-spacing:3px;text-shadow:0 0 20px currentColor;opacity:0;transform:translateY(8px);transition:opacity .5s,transform .5s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}
+.rclass.show{opacity:1;transform:translateY(0)}
+.rsub{font-family:'Share Tech Mono',monospace;font-size:10px;color:#A0B4D0;letter-spacing:2px;opacity:0;transition:opacity .4s .1s;margin-top:2px}
+.rsub.show{opacity:1}
+.cring{flex-shrink:0;opacity:0;transition:opacity .4s .2s}
+.cring.show{opacity:1}
+.cringsvg{width:62px;height:62px}
+
+/* tele */
+.tgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:3px;width:100%}
+.tc{background:rgba(5,7,12,.85);border:1px solid rgba(50,68,110,.3);padding:5px 3px;text-align:center;border-radius:var(--r)}
+.tc::before{content:'';display:block;height:1px;background:rgba(60,80,120,.18);margin-bottom:3px}
+.tv{font-family:'Share Tech Mono',monospace;font-size:11px;color:#FFD050;font-weight:600}
+.tl{font-size:8px;color:#8090B8;letter-spacing:1px;margin-top:1px}
+
+/* ai */
+.aibox{background:rgba(184,120,32,.08);border:1px solid rgba(200,140,40,.25);border-radius:var(--r);padding:9px 12px;font-size:11px;color:#C8D0E8;line-height:1.85;display:none}
+.aibox.show{display:block}
+.ailbl{font-family:'Share Tech Mono',monospace;font-size:9px;color:#D8A030;letter-spacing:2px;display:block;margin-bottom:5px}
+.err{display:none;background:rgba(192,64,64,.1);border:1px solid rgba(192,64,64,.4);color:#E89090;font-family:'Share Tech Mono',monospace;font-size:8px;padding:5px 8px;border-radius:var(--r);text-align:center}
+.err.show{display:block}
+
+/* ─── RIGHT PANEL ─── */
+.hi{padding:5px 7px;border-left:2px solid var(--am2);margin-bottom:4px;background:rgba(184,120,32,.03);opacity:0;transform:translateX(-4px);animation:hsi .25s forwards;border-radius:0 var(--r) var(--r) 0}
+@keyframes hsi{to{opacity:1;transform:translateX(0)}}
+.hcls{font-family:'Share Tech Mono',monospace;font-size:11px;letter-spacing:.5px;font-weight:500}
+.hmeta{font-size:9px;color:#8890B0;margin-top:2px}
+.firow{display:flex;align-items:center;gap:4px;margin-bottom:4px}
+.fin{font-size:9px;color:#A0A8C8;width:66px;flex-shrink:0}
+.fitr{flex:1;height:2px;background:rgba(50,70,110,.35);border-radius:1px}
+.fifl{height:100%;border-radius:1px}
+.fip{font-family:'Share Tech Mono',monospace;font-size:9px;color:#D09828;width:24px;text-align:right}
+.cref{display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid rgba(40,52,80,.1)}
+.cico{font-size:12px;width:14px;text-align:center}
+.cname{font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:.5px;font-weight:600}
+.cen{font-size:9px;color:#8898C0}
+.cmpt{width:100%;border-collapse:collapse}
+.cmpt th{font-family:'Share Tech Mono',monospace;font-size:9px;color:#9098B8;padding:2px 4px;border-bottom:1px solid rgba(60,80,120,.35);text-align:left;letter-spacing:1px}
+.cmpt td{padding:4px 5px;border-bottom:1px solid rgba(60,80,110,.15);font-family:'Share Tech Mono',monospace;color:#A0B0CC;font-size:10px}
+.cmpt tr.best td{color:#FFB840;font-weight:700}
+.cbar{display:inline-block;height:2px;background:#A07820;vertical-align:middle;border-radius:1px}
+
+/* ─── STATUS BAR ─── */
+.sbar{display:flex;align-items:center;justify-content:space-between;padding:0 18px;position:relative;z-index:20}
+.sbar::before{content:'';position:absolute;top:0;left:18px;right:18px;height:1px;background:linear-gradient(90deg,transparent,rgba(40,52,80,.4),transparent)}
+.si{font-family:'Share Tech Mono',monospace;font-size:10px;color:#8898B8;letter-spacing:1px;display:flex;align-items:center;gap:3px}
+.sdot{width:3px;height:3px;border-radius:50%;background:var(--gr);box-shadow:0 0 3px var(--gr)}
+
+/* ─── BOOT ─── */
+#boot{position:fixed;inset:0;z-index:300;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px}
+#boot.out{animation:fOut .8s forwards}
+@keyframes fOut{to{opacity:0;pointer-events:none}}
+#bootBox{width:580px;border:1px solid rgba(30,70,30,.4);padding:24px 28px;background:rgba(1,4,1,.96);position:relative}
+#bootBox::before,#bootBox::after{content:'';position:absolute;left:0;right:0;height:1px}
+#bootBox::before{top:0;background:linear-gradient(90deg,transparent,rgba(40,180,80,.3),transparent)}
+#bootBox::after{bottom:0;background:linear-gradient(90deg,transparent,rgba(40,180,80,.15),transparent)}
+.btitle{font-family:'Share Tech Mono',monospace;font-size:12px;color:#50FF80;letter-spacing:4px;margin-bottom:16px;text-shadow:0 0 14px rgba(80,255,120,.6)}
+#bootLog{height:260px;overflow-y:auto;margin-bottom:14px}
+#bootLog::-webkit-scrollbar{width:2px}
+#bootLog::-webkit-scrollbar-thumb{background:rgba(40,100,40,.4)}
+.blog{font-family:'Share Tech Mono',monospace;font-size:11px;line-height:1.9;opacity:0;animation:bIn .1s forwards}
+@keyframes bIn{to{opacity:1}}
+.blog.info{color:#50A860}
+.blog.warn{color:rgba(200,130,40,.8)}
+.blog.err{color:rgba(180,60,60,.8)}
+.blog.ok{color:var(--gr)}
+.bbar{height:1px;background:rgba(8,16,8,.9);margin-bottom:8px;overflow:hidden}
+.bfill{height:100%;background:var(--gr);width:0;transition:width .4s}
+.bfoot{display:flex;justify-content:space-between;font-family:'Share Tech Mono',monospace;font-size:11px;color:#50C060;font-weight:600}
+
+/* planet class colours */
+.cBewohnbar{color:#30CC70}.cTerraformierbar{color:#4890D8}.cRohstoffreich{color:#E0A020}
+.cWissenschaftlich{color:#A855F7}.cGasriese{color:#9870D0}.cWüstenplanet{color:#C07830}
+.cEiswelt{color:#80C8E8}.cToxisch{color:#D84040}.cHohestrahlung{color:#F06020}.cToterahswelt{color:#707880}
+</style>
+</head>
+<body>
+
+<canvas id="threeCanvas"></canvas>
+<div id="vig"></div>
+<div id="lwall"></div><div id="rwall"></div>
+<div id="thead"></div><div id="tfoot"></div>
+<div id="grain"></div>
+<div id="sfx"></div>
+
+<!-- BOOT -->
+<div id="boot">
+  <div id="bootBox">
+    <div class="btitle">▸ CIS-7 SYSTEM BOOT · COSMIC INTELLIGENCE SYSTEM</div>
+    <div id="bootLog"></div>
+    <div class="bbar"><div class="bfill" id="bfill"></div></div>
+    <div class="bfoot"><span id="bStatus">INITIALIZING…</span><span id="bCount">0 / 10 MODELS</span></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="hdr">
+    <div class="hship mono">CIS-7 // COSMIC INTELLIGENCE SYSTEM</div>
+    <div class="hleds">
+      <div class="hled"><div class="led" id="ledPipe"></div>PIPELINE</div>
+      <div class="hled"><div class="led" id="ledSvc"></div>CLASSIFIERS</div>
+      <div class="hled"><div class="led" id="ledModels"></div><span id="ledModelsLbl">MODELS 0/10</span></div>
+      <div class="hled"><div class="led" id="ledData"></div>DATASET</div>
+    </div>
+    <div class="hdate mono" id="stardate">STARDATE 2547.076</div>
+  </div>
+
+  <div class="bridge">
+    <!-- LEFT CONSOLE -->
+    <div class="col cl" style="z-index:20">
+      <div class="pb">
+        <div class="sh">Planetary Sensor Array</div>
+        <div id="sliders"></div>
+      </div>
+      <div class="pb">
+        <div class="sh">Corrupted Fields · Category_X</div>
+        <div class="catrow"><span class="catlab">Magnetic Field</span><select class="catsel" id="magField"></select></div>
+        <div class="catrow"><span class="catlab">Radiation Lvl</span><select class="catsel" id="radLevel"></select></div>
+      </div>
+      <button class="btn mono" id="scanBtn" onclick="runScan()">▶ INITIATE PLANETARY SCAN</button>
+      <button class="btn btn2 mono" onclick="randomize()">⚡ RANDOM PLANET</button>
+      <div class="err" id="errBanner"></div>
+      <div class="pb" style="overflow:visible">
+        <div class="sh">Model Selection · 10 Classifiers</div>
+        <div class="mgrid" id="modelGrid"></div>
+      </div>
+      <div class="pb">
+        <div class="sh">Active Model Metrics</div>
+        <div id="metrics"></div>
+      </div>
+    </div>
+
+    <!-- CENTER -->
+    <div class="ctr" id="ctrView">
+      <div class="hc hc-tl"></div><div class="hc hc-tr"></div>
+      <div class="hc hc-bl"></div><div class="hc hc-br"></div>
+      <div class="hud-cross"></div>
+      <div class="hud-ring"></div><div class="hud-ring hud-ring2"></div>
+      <div class="hud-dist mono" id="hudDist">SCANNING FOR TARGET…</div>
+      <div class="hud-lock mono" id="hudLock">▸ TARGET LOCKED</div>
+      <canvas id="planetCanvas"></canvas>
+      <div class="rzone">
+        <div class="rtop">
+          <div class="rtext">
+            <div class="rclass show" id="rclass" style="color:#8898C0">AWAITING SCAN</div>
+            <div class="rsub mono show" id="rsub">INSERT PLANETARY DATA · PRESS SCAN</div>
+          </div>
+          <div class="cring" id="cring">
+            <svg class="cringsvg" viewBox="0 0 64 64">
+              <circle cx="32" cy="32" r="27" fill="none" stroke="rgba(40,52,80,.4)" stroke-width="4"/>
+              <circle id="cringEl" cx="32" cy="32" r="27" fill="none" stroke-width="4" stroke-linecap="round"
+                style="transform:rotate(-90deg);transform-origin:32px 32px;stroke-dasharray:0 170;transition:stroke-dasharray 1s ease .3s;stroke:var(--am3)"/>
+              <text id="cringPct" x="32" y="32" text-anchor="middle" dominant-baseline="central"
+                font-family="Share Tech Mono,monospace" font-size="12" fill="var(--am3)">--</text>
+            </svg>
+          </div>
+        </div>
+        <div class="tgrid">
+          <div class="tc"><div class="tv mono" id="t0">---</div><div class="tl">ATMO DEN</div></div>
+          <div class="tc"><div class="tv mono" id="t1">---</div><div class="tl">SURF TEMP</div></div>
+          <div class="tc"><div class="tv mono" id="t2">---</div><div class="tl">GRAVITY</div></div>
+          <div class="tc"><div class="tv mono" id="t3">---</div><div class="tl">WATER</div></div>
+          <div class="tc"><div class="tv mono" id="t4">---</div><div class="tl">MINERAL</div></div>
+        </div>
+        <div class="tgrid" style="margin-top:3px">
+          <div class="tc"><div class="tv mono" id="t5">---</div><div class="tl">ORB PER</div></div>
+          <div class="tc"><div class="tv mono" id="t6">---</div><div class="tl">PROX STAR</div></div>
+          <div class="tc"><div class="tv mono" id="t7">---</div><div class="tl">ATMO COMP</div></div>
+          <div class="tc"><div class="tv mono" id="t8">---</div><div class="tl">MAG FIELD</div></div>
+          <div class="tc"><div class="tv mono" id="t9">---</div><div class="tl">RADIATION</div></div>
+        </div>
+        <div class="aibox" id="aibox"><span class="ailbl mono">▸ AI ANALYSIS</span><span id="aiText"></span></div>
+      </div>
+    </div>
+
+    <!-- RIGHT CONSOLE -->
+    <div class="col cr" style="z-index:20">
+      <div class="pb">
+        <div class="sh">Classification Log</div>
+        <div id="histPanel"><div class="mono" style="font-size:10px;color:#8090B0">NO ENTRIES YET</div></div>
+      </div>
+      <div class="pb">
+        <div class="sh">Model Comparison</div>
+        <table class="cmpt"><thead><tr><th>MODEL</th><th>ACC</th><th></th></tr></thead><tbody id="cmpBody"><tr><td colspan="3" style="color:#9098B8;font-size:10px" class="mono">TRAINING…</td></tr></tbody></table>
+      </div>
+      <div class="pb">
+        <div class="sh">Feature Importance</div>
+        <div id="impPanel"></div>
+      </div>
+      <div class="pb">
+        <div class="sh">Planet Class Reference</div>
+        <div id="classRef"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sbar">
+    <div class="si"><div class="sdot"></div><span id="sb1" class="mono">ML PIPELINE · num_pipeline.pkl · 10 CLASSIFIERS</span></div>
+    <div class="si"><span id="sb2" class="mono">DATASET · thermoracleTrain.csv</span></div>
+    <div class="si"><span id="sb3" class="mono">SYSTEM BOOTING…</span></div>
+  </div>
+</div>
+
+<script>
+const API='http://localhost:8000';
+
+/* ══════════════════ THREE.JS: GALAXY + PLANET ══════════════════ */
+let pScene,pCam,pRend,planetMesh,atmoMesh,cloudMesh;
+let pTarget=new THREE.Color(.14,.32,.65),pCurrent=new THREE.Color(.14,.32,.65);
+let stars1,stars2,nebula,frame=0;
+
+function initThree(){
+  const cv=document.getElementById('threeCanvas');
+  pRend=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:false});
+  pRend.setPixelRatio(Math.min(devicePixelRatio,2));
+  pRend.setSize(innerWidth,innerHeight);
+  pRend.setClearColor(0x03040A,1);
+  pScene=new THREE.Scene();
+  pCam=new THREE.PerspectiveCamera(58,innerWidth/innerHeight,.01,3000);
+  pCam.position.set(0,0,5);
+
+  /* ── DENSE STAR FIELD ── */
+  {
+    const N=10000,geo=new THREE.BufferGeometry();
+    const pos=new Float32Array(N*3),col=new Float32Array(N*3);
+    for(let i=0;i<N;i++){
+      const th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1),r=300+Math.random()*900;
+      pos[i*3]=r*Math.sin(ph)*Math.cos(th);pos[i*3+1]=r*Math.sin(ph)*Math.sin(th);pos[i*3+2]=r*Math.cos(ph);
+      const t=Math.random();
+      if(t<.45){col[i*3]=.88;col[i*3+1]=.92;col[i*3+2]=1}       // blue-white
+      else if(t<.7){col[i*3]=1;col[i*3+1]=.97;col[i*3+2]=.84}    // warm white
+      else if(t<.88){col[i*3]=1;col[i*3+1]=.82;col[i*3+2]=.5}    // yellow
+      else{col[i*3]=1;col[i*3+1]=.6;col[i*3+2]=.5}               // orange-red giants
+    }
+    geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    geo.setAttribute('color',new THREE.BufferAttribute(col,3));
+    stars1=new THREE.Points(geo,new THREE.PointsMaterial({size:.8,vertexColors:true,transparent:true,opacity:.88,sizeAttenuation:false}));
+    pScene.add(stars1);
+  }
+
+  /* ── BRIGHT SPARSE STARS ── */
+  {
+    const N=500,geo=new THREE.BufferGeometry();
+    const pos=new Float32Array(N*3);
+    for(let i=0;i<N;i++){
+      const th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1),r=150+Math.random()*350;
+      pos[i*3]=r*Math.sin(ph)*Math.cos(th);pos[i*3+1]=r*Math.sin(ph)*Math.sin(th);pos[i*3+2]=r*Math.cos(ph);
+    }
+    geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    stars2=new THREE.Points(geo,new THREE.PointsMaterial({size:2.2,color:0xffffff,transparent:true,opacity:.65,sizeAttenuation:false}));
+    pScene.add(stars2);
+  }
+
+  /* ── NEBULA CLOUD (galaxy arm feel) ── */
+  {
+    const N=3000,geo=new THREE.BufferGeometry();
+    const pos=new Float32Array(N*3),col=new Float32Array(N*3);
+    const nc=[[.07,.03,.18],[.03,.07,.22],[.15,.04,.07],[.04,.16,.14],[.18,.08,.02]];
+    for(let i=0;i<N;i++){
+      const angle=Math.random()*Math.PI*2;
+      const radius=30+Math.pow(Math.random(),.4)*320;
+      const h=(Math.random()-.5)*80;
+      // spiral arm offset
+      const arm=Math.floor(Math.random()*3)*Math.PI*2/3;
+      const twist=radius*.005;
+      pos[i*3]=Math.cos(angle+arm+twist)*radius+(Math.random()-.5)*50;
+      pos[i*3+1]=h;
+      pos[i*3+2]=Math.sin(angle+arm+twist)*radius+(Math.random()-.5)*50-180;
+      const c=nc[Math.floor(Math.random()*nc.length)];
+      const b=.25+Math.random()*.75;
+      col[i*3]=c[0]*b;col[i*3+1]=c[1]*b;col[i*3+2]=c[2]*b;
+    }
+    geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    geo.setAttribute('color',new THREE.BufferAttribute(col,3));
+    nebula=new THREE.Points(geo,new THREE.PointsMaterial({size:7,vertexColors:true,transparent:true,opacity:.45,sizeAttenuation:true,depthWrite:false}));
+    pScene.add(nebula);
+  }
+
+  /* ── LIGHTING ── */
+  pScene.add(new THREE.AmbientLight(0x0c1420,.9));
+  const sun=new THREE.DirectionalLight(0xfff0dd,2.3);sun.position.set(6,3,5);pScene.add(sun);
+  const rim=new THREE.DirectionalLight(0x1a3060,.7);rim.position.set(-5,-2,-4);pScene.add(rim);
+  const fill=new THREE.DirectionalLight(0x0d1c38,.3);fill.position.set(0,-5,0);pScene.add(fill);
+
+  /* ── PLANET ── */
+  planetMesh=new THREE.Mesh(new THREE.SphereGeometry(1,72,72),
+    new THREE.MeshPhongMaterial({color:0x1e3d70,shininess:16,specular:0x081428}));
+  pScene.add(planetMesh);
+
+  atmoMesh=new THREE.Mesh(new THREE.SphereGeometry(1.075,36,36),
+    new THREE.MeshPhongMaterial({color:0x2255bb,transparent:true,opacity:.12,side:THREE.FrontSide,depthWrite:false}));
+  pScene.add(atmoMesh);
+
+  cloudMesh=new THREE.Mesh(new THREE.SphereGeometry(1.022,36,36),
+    new THREE.MeshPhongMaterial({color:0xffffff,transparent:true,opacity:.05,depthWrite:false}));
+  pScene.add(cloudMesh);
+
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(1.52,.032,8,80),
+    new THREE.MeshPhongMaterial({color:0x8a6830,transparent:true,opacity:.15}));
+  ring.rotation.x=Math.PI/2.4;pScene.add(ring);
+
+  /* drag to rotate */
+  let drag=false,lx=0,ly=0;
+  const pc=document.getElementById('planetCanvas');
+  pc.addEventListener('mousedown',e=>{drag=true;lx=e.clientX;ly=e.clientY});
+  window.addEventListener('mouseup',()=>drag=false);
+  window.addEventListener('mousemove',e=>{
+    if(!drag)return;
+    planetMesh.rotation.y+=(e.clientX-lx)*.006;planetMesh.rotation.x+=(e.clientY-ly)*.006;
+    atmoMesh.rotation.y=cloudMesh.rotation.y=planetMesh.rotation.y;
+    lx=e.clientX;ly=e.clientY;
+  });
+  window.addEventListener('resize',()=>{
+    pRend.setSize(innerWidth,innerHeight);pCam.aspect=innerWidth/innerHeight;pCam.updateProjectionMatrix();
+    setPCS();
+  });
+  setPCS();
+  // Re-init renderer size after canvas height is set
+  const pc2=document.getElementById('planetCanvas');
+  pRend.setSize(innerWidth,innerHeight);
+  animateThree();
+}
+
+function setPCS(){
+  const c=document.getElementById('ctrView');
+  const h=c ? Math.max(220, Math.min(290, c.clientHeight*.52)) : 260;
+  const pc=document.getElementById('planetCanvas');
+  if(pc) pc.style.height=h+'px';
+  // also update Three.js renderer aspect if running
+  if(pRend && pCam){
+    pRend.setSize(innerWidth,innerHeight);
+    pCam.aspect=innerWidth/innerHeight;
+    pCam.updateProjectionMatrix();
+  }
+}
+
+function animateThree(){
+  requestAnimationFrame(animateThree);frame++;
+  const t=frame*.0008;
+  pCurrent.lerp(pTarget,.016);
+  planetMesh.material.color.copy(pCurrent);atmoMesh.material.color.copy(pCurrent);
+  planetMesh.rotation.y+=.0012;cloudMesh.rotation.y+=.0017;atmoMesh.rotation.y+=.0008;
+  if(nebula){nebula.rotation.y+=.00005;nebula.rotation.x=Math.sin(t*.25)*.018}
+  if(stars1)stars1.rotation.y+=.000025;
+  if(stars2)stars2.rotation.y+=.00007;
+  // gentle cockpit camera sway
+  pCam.position.set(Math.sin(t*.35)*.035, Math.cos(t*.28)*.022, 5);
+  // twinkle
+  if(frame%80===0&&stars2)stars2.material.opacity=.5+Math.random()*.25;
+  if(frame%120===0&&stars1)stars1.material.opacity=.75+Math.random()*.15;
+  pRend.render(pScene,pCam);
+}
+
+const PCOLS={'Bewohnbar':new THREE.Color(.05,.46,.18),'Terraformierbar':new THREE.Color(.09,.28,.58),'Rohstoffreich':new THREE.Color(.48,.28,.04),'Wissenschaftlich':new THREE.Color(.36,.16,.56),'Gasriese':new THREE.Color(.34,.22,.52),'Wüstenplanet':new THREE.Color(.46,.24,.06),'Eiswelt':new THREE.Color(.46,.64,.8),'Toxischeatmosphäre':new THREE.Color(.48,.10,.07),'Hohestrahlung':new THREE.Color(.52,.16,.03),'Toterahswelt':new THREE.Color(.20,.22,.24)};
+const PATMO={'Bewohnbar':.20,'Gasriese':.44,'Terraformierbar':.13,'Toxischeatmosphäre':.34,'Hohestrahlung':.29,'Eiswelt':.25,'Wüstenplanet':.07,'Wissenschaftlich':.17};
+const PCLOUD={'Bewohnbar':.14,'Gasriese':.32,'Terraformierbar':.08};
+function setPlanetType(cls){pTarget.copy(PCOLS[cls]||new THREE.Color(.14,.32,.65));atmoMesh.material.opacity=PATMO[cls]??.1;cloudMesh.material.opacity=PCLOUD[cls]??.03}
+
+/* ══════════════════ DATA ══════════════════ */
+const FEATURES=[{name:'Atmo Density',min:-5,max:5,def:.47,step:.01},{name:'Surface Temp',min:-5,max:5,def:-.31,step:.01},{name:'Gravity',min:-5,max:5,def:-2.09,step:.01},{name:'Water Content',min:-3,max:3,def:-.15,step:.01},{name:'Mineral Abund.',min:-3,max:3,def:-.89,step:.01},{name:'Orbital Period',min:-3,max:3,def:.90,step:.01},{name:'Prox. to Star',min:-3,max:3,def:1.00,step:.01},{name:'Atmo Comp Idx',min:-3,max:3,def:.00,step:.01}];
+const CAT_VALS=Array.from({length:16},(_,i)=>`Category_${i}`);
+const MODEL_DEFS=[{id:0,name:'Logistic Reg',short:'LR'},{id:1,name:'Decision Tree',short:'DT'},{id:2,name:'Random Forest',short:'RF'},{id:3,name:'KNN',short:'KNN'},{id:4,name:'SVC',short:'SVC'},{id:5,name:'XGBoost',short:'XGB'},{id:6,name:'Grad. Boost',short:'GB'},{id:7,name:'AdaBoost',short:'ADA'},{id:8,name:'Naive Bayes',short:'NB'},{id:9,name:'Extra Trees',short:'ET'}];
+const CLASS_META={'Bewohnbar':{en:'Habitable',css:'cBewohnbar',icon:'◉',color:'#30CC70'},'Terraformierbar':{en:'Terraformable',css:'cTerraformierbar',icon:'◈',color:'#4890D8'},'Rohstoffreich':{en:'Resource-Rich',css:'cRohstoffreich',icon:'◆',color:'#E0A020'},'Wissenschaftlich':{en:'Scientific',css:'cWissenschaftlich',icon:'⬡',color:'#A855F7'},'Gasriese':{en:'Gas Giant',css:'cGasriese',icon:'◎',color:'#9870D0'},'Wüstenplanet':{en:'Desert World',css:'cWüstenplanet',icon:'◐',color:'#C07830'},'Eiswelt':{en:'Ice World',css:'cEiswelt',icon:'◇',color:'#80C8E8'},'Toxischeatmosphäre':{en:'Toxic Atmosphere',css:'cToxisch',icon:'⊗',color:'#D84040'},'Hohestrahlung':{en:'High Radiation',css:'cHohestrahlung',icon:'☢',color:'#F06020'},'Toterahswelt':{en:'Dead World',css:'cToterahswelt',icon:'○',color:'#707880'}};
+const IMPORTANCE=[{n:'Atmo Density',v:20,c:'#E0A020'},{n:'Surface Temp',v:18,c:'#C88020'},{n:'Gravity',v:15,c:'#A87020'},{n:'Water Cont.',v:13,c:'#887820'},{n:'Min. Abund.',v:10,c:'#687820'},{n:'Orbital Per.',v:8,c:'#487820'},{n:'Prox. Star',v:6,c:'#287830'},{n:'Atmo Comp',v:5,c:'#108838'},{n:'Mag. Field',v:2,c:'#108888'},{n:'Radiation',v:1,c:'#1068A8'}];
+const EXPLAIN={'Bewohnbar':v=>`Water content ${v[3].toFixed(2)}σ above mean. Atmo density ${v[0].toFixed(2)} within breathable range. Temp ${v[1].toFixed(2)} biologically viable. Colonisation approved.`,'Terraformierbar':v=>`Marginal habitability. Water trace ${v[3].toFixed(2)}. Temp ${v[1].toFixed(2)} improvable via atmospheric seeding. Est. 200yr timeline.`,'Rohstoffreich':v=>`High mineral abundance ${v[4].toFixed(2)}. Low water ${v[3].toFixed(2)}. Dense subsurface deposits. Automated extraction recommended.`,'Wissenschaftlich':v=>`Anomalous parameter distribution. Orbital period ${v[5].toFixed(2)}, proximity ${v[6].toFixed(2)} suggest rare phenomena. High scientific value.`,'Gasriese':v=>`Extreme atmo density ${v[0].toFixed(2)} and gravity ${v[2].toFixed(2)}. Gas giant confirmed. Orbital harvesting station viable.`,'Wüstenplanet':v=>`Elevated temp ${v[1].toFixed(2)}. Water critically low ${v[3].toFixed(2)}. Desert survival protocol required.`,'Eiswelt':v=>`Temp ${v[1].toFixed(2)} far below mean. Permanent ice cover. Subsurface ocean possible. Mag shielding ${v[7].toFixed(2)}.`,'Toxischeatmosphäre':v=>`Atmo composition index ${v[7].toFixed(2)} indicates lethal gas mixture. Not mission-viable without terraform.`,'Hohestrahlung':v=>`Radiation critically elevated. Proximity ${v[6].toFixed(2)}. Mag shielding ${v[7].toFixed(2)} insufficient. Lethal within hours.`,'Toterahswelt':v=>`No water ${v[3].toFixed(2)}. Thin atmo ${v[0].toFixed(2)}. No mag field ${v[7].toFixed(2)}. Fully exposed to stellar radiation. Uninhabitable.`};
+
+let activeModel=-1,liveModels={};
+const scanHistory=[];
+
+/* ══════════════════ BOOT SSE ══════════════════ */
+function startBoot(){
+  const bl=document.getElementById('bootLog'),bf=document.getElementById('bfill'),bs=document.getElementById('bStatus'),bc=document.getElementById('bCount');
+  function log(msg,lv='info'){const d=document.createElement('div');d.className='blog '+lv;d.textContent='> '+msg;bl.appendChild(d);bl.scrollTop=bl.scrollHeight}
+  log('Connecting to CIS-7 backend at '+API+' …');
+  const es=new EventSource(API+'/status-stream');
+  let last='';
+  es.onmessage=e=>{
+    const d=JSON.parse(e.data);
+    if(d.type==='log'){log(`[${d.time}] ${d.msg}`,d.level==='ERROR'?'err':d.level==='WARN'?'warn':d.level==='SUCCESS'?'ok':'info')}
+    if(d.status!==last){last=d.status;bs.textContent=d.status.replace(/_/g,' ')}
+    bc.textContent=`${d.ready} / 10 MODELS`;bf.style.width=Math.round(d.ready/10*100)+'%';
+    if(d.status==='READY'){es.close();log('ALL SYSTEMS ONLINE · LAUNCHING BRIDGE','ok');setTimeout(()=>{document.getElementById('boot').classList.add('out');document.getElementById('app').classList.add('on');initApp();setTimeout(()=>document.getElementById('boot').style.display='none',900)},600)}
+  };
+  es.onerror=()=>{
+    es.close();log('Backend not detected — offline simulation mode','warn');log('Start: uvicorn main:app --reload --port 8000','warn');
+    bf.style.width='100%';bs.textContent='OFFLINE MODE';bc.textContent='SIMULATION';
+    setTimeout(()=>{document.getElementById('boot').classList.add('out');document.getElementById('app').classList.add('on');initApp();setTimeout(()=>document.getElementById('boot').style.display='none',900)},1200);
+  };
+}
+
+/* ══════════════════ INIT ══════════════════ */
+function initApp(){
+  initThree();buildSliders();buildCatSelects();buildModelGrid();buildImportance();buildClassRef();
+  updateStardate();setInterval(updateStardate,30000);
+  pollModels();setInterval(pollModels,2500);setPCS();
+  setInterval(()=>{const d=(2547+Math.random()*15).toFixed(1);document.getElementById('hudDist').textContent=`RANGE: ${d} AU · SCANNING…`},3200);
+}
+
+/* ══════════════════ BUILD UI ══════════════════ */
+function buildSliders(){
+  document.getElementById('sliders').innerHTML=FEATURES.map((f,i)=>`<div class="ir"><div class="il"><span class="in">${f.name}</span><span class="iv mono" id="sv${i}">${f.def.toFixed(2)}</span></div><input type="range" min="${f.min}" max="${f.max}" step="${f.step}" value="${f.def}" oninput="document.getElementById('sv${i}').textContent=parseFloat(this.value).toFixed(2);updateTele()"></div>`).join('');
+  updateTele();
+}
+function buildCatSelects(){
+  const opts=CAT_VALS.map(v=>`<option value="${v}">${v}</option>`).join('');
+  document.getElementById('magField').innerHTML=opts;document.getElementById('radLevel').innerHTML=opts;
+  document.getElementById('magField').value='Category_9';document.getElementById('radLevel').value='Category_9';
+}
+function buildModelGrid(){
+  document.getElementById('modelGrid').innerHTML=MODEL_DEFS.map(m=>`
+  <div class="mtab loading mono" id="mt${m.id}" onclick="setModel(${m.id})" title="${m.name}">
+    <span style="display:block;font-size:8px;letter-spacing:.5px">${m.short}</span>
+    <span class="macc mono" id="macc${m.id}">…</span>
+  </div>`).join('');
+  // model will be auto-selected when liveModels data arrives
+}
+function updateModelGrid(){
+  MODEL_DEFS.forEach(m=>{const tab=document.getElementById('mt'+m.id),acc=document.getElementById('macc'+m.id);if(!tab)return;const lv=liveModels[m.id];if(lv){tab.classList.remove('loading');tab.classList.add('done');acc.textContent=lv.metrics.acc+'%';if(m.id===activeModel)tab.classList.add('active')}});
+  buildMetrics();
+}
+function setModel(id){activeModel=id;document.querySelectorAll('.mtab').forEach(t=>t.classList.remove('active'));const tab=document.getElementById('mt'+id);if(tab)tab.classList.add('active');buildMetrics();updateCmpTable();document.getElementById('sb3').textContent=`ACTIVE: ${MODEL_DEFS.find(m=>m.id===id)?.name||'UNKNOWN'}`}
+function buildMetrics(){const lv=liveModels[activeModel];if(!lv){document.getElementById('metrics').innerHTML=`<div class="mono" style="font-size:10px;color:#8090B0">LOADING…</div>`;return}const m=lv.metrics;document.getElementById('metrics').innerHTML=[{k:'Accuracy',v:m.acc},{k:'Precision',v:m.prec},{k:'Recall',v:m.rec},{k:'F1-Score',v:m.f1}].map(r=>`<div class="mrow"><span class="mk mono">${r.k}</span><div class="mbw"><div class="mb" style="width:${r.v}%"></div></div><span class="mp mono">${r.v}%</span></div>`).join('')}
+function updateCmpTable(){const e=Object.entries(liveModels).sort((a,b)=>b[1].metrics.acc-a[1].metrics.acc);if(!e.length){document.getElementById('cmpBody').innerHTML=`<tr><td colspan="3" style="color:#9098B8;font-size:10px" class="mono">TRAINING…</td></tr>`;return}document.getElementById('cmpBody').innerHTML=e.map(([id,v])=>`<tr class="${parseInt(id)===activeModel?'best':''}"><td>${v.name}</td><td><span class="cbar" style="width:${v.metrics.acc*.45}px"></span></td><td>${v.metrics.acc}%</td></tr>`).join('')}
+function buildImportance(){document.getElementById('impPanel').innerHTML=IMPORTANCE.map(f=>`<div class="firow"><span class="fin mono">${f.n}</span><div class="fitr"><div class="fifl" style="width:${f.v*5}%;background:${f.c}"></div></div><span class="fip mono">${f.v}%</span></div>`).join('')}
+function buildClassRef(){document.getElementById('classRef').innerHTML=Object.entries(CLASS_META).map(([k,v])=>`<div class="cref"><span class="cico ${v.css}">${v.icon}</span><div><div class="cname mono ${v.css}">${k}</div><div class="cen mono">${v.en}</div></div></div>`).join('')}
+
+/* ══════════════════ TELE + POLL ══════════════════ */
+function getVals(){return[...document.querySelectorAll('input[type=range]')].map(s=>parseFloat(s.value))}
+function updateTele(){const v=getVals();v.forEach((x,i)=>{const el=document.getElementById('t'+i);if(el)el.textContent=x.toFixed(2)});const m=document.getElementById('magField')?.value||'Category_9';const r=document.getElementById('radLevel')?.value||'Category_9';if(document.getElementById('t8'))document.getElementById('t8').textContent=m.replace('Category_','');if(document.getElementById('t9'))document.getElementById('t9').textContent=r.replace('Category_','')}
+async function pollModels(){
+  try{
+    const r=await fetch(API+'/models');
+    const data=await r.json();
+    liveModels=data;
+    // Auto-select highest accuracy model — no hardcoding
+    if(activeModel===-1 && Object.keys(data).length>0){
+      const best=Object.entries(data).sort((a,b)=>b[1].metrics.acc-a[1].metrics.acc)[0];
+      if(best){
+        activeModel=parseInt(best[0]);
+        document.getElementById('sb3').textContent=`AUTO-SELECTED: ${best[1].name} · ${best[1].metrics.acc}% ACC`;
+      }
+    }
+    updateModelGrid();updateCmpTable();updateLeds(true);
+    try{
+      const h=await(await fetch(API+'/health')).json();
+      document.getElementById('sb2').textContent=`DATASET · thermoracleTrain.csv · ${h.train_rows||'?'} ROWS`;
+      // Update sb1 with actual best model name
+      const bestM=Object.entries(liveModels).sort((a,b)=>b[1].metrics.acc-a[1].metrics.acc)[0];
+      if(bestM) document.getElementById('sb1').textContent=`BEST MODEL: ${bestM[1].name} · ${bestM[1].metrics.acc}% · num_pipeline.pkl`;
+    }catch(e){}
+  }catch(e){updateLeds(false)}
+}
+function updateLeds(on){const s=(id,v)=>{const el=document.getElementById(id);if(el)el.className='led '+(v?'lg':'loff')};s('ledPipe',on);s('ledData',on);s('ledSvc',on&&liveModels[4]?.ready);const cnt=Object.keys(liveModels).length;s('ledModels',cnt===10);document.getElementById('ledModelsLbl').textContent=`MODELS ${cnt}/10`}
+
+/* ══════════════════ SCAN ══════════════════ */
+async function runScan(){
+  const btn=document.getElementById('scanBtn'),err=document.getElementById('errBanner');
+  const sfx=document.getElementById('sfx'),hl=document.getElementById('hudLock');
+  err.classList.remove('show');
+  sfx.className='';void sfx.offsetWidth;sfx.className='go';
+  btn.disabled=true;hl.classList.remove('show');
+  ['rclass','rsub','cring'].forEach(id=>document.getElementById(id).classList.remove('show'));
+  document.getElementById('aibox').classList.remove('show');
+  document.getElementById('sb3').textContent='SCANNING…';
+  document.getElementById('hudDist').textContent='SCANNING TARGET · HOLD…';
+  const vals=getVals(),mag=document.getElementById('magField').value,rad=document.getElementById('radLevel').value;
+  try{
+    const res=await fetch(API+'/predict',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({atmo_density:vals[0],surface_temp:vals[1],gravity:vals[2],water_content:vals[3],mineral_abund:vals[4],orbital_period:vals[5],prox_to_star:vals[6],atmo_comp:vals[7],mag_field:mag,radiation:rad,model_id:activeModel})});
+    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.detail||'API '+res.status)}
+    const data=await res.json();
+    await new Promise(r=>setTimeout(r,1600));
+    hl.classList.add('show');
+    showResult(data.predicted_class,data.english_label,data.confidence,data.color,vals,data.model_name,true);
+  }catch(e){
+    if(e.message.includes('fetch')||e.message.includes('NetworkError')||e.message.includes('Failed')){
+      err.textContent='⚠ BACKEND OFFLINE — simulation mode active';err.classList.add('show');
+      await new Promise(r=>setTimeout(r,1600));hl.classList.add('show');offlineSim(vals,mag,rad);
+    }else{err.textContent='⚠ '+e.message;err.classList.add('show');document.getElementById('sb3').textContent='SCAN ERROR'}
+  }finally{btn.disabled=false}
+}
+
+function showResult(cls,en,conf,color,vals,modelName,real){
+  const meta=CLASS_META[cls]||{css:'',icon:'●',color:'#C8922A',en:cls};const clr=color||meta.color;
+  setPlanetType(cls);
+  const rc=document.getElementById('rclass');rc.textContent=cls;rc.className='rclass show '+(meta.css||'');
+  document.getElementById('rsub').textContent=`${modelName||'?'} · ${en.toUpperCase()} · ${real?'REAL MODEL':'SIMULATION'}`;document.getElementById('rsub').classList.add('show');
+  const circ=2*Math.PI*27;
+  document.getElementById('cringEl').style.stroke=clr;document.getElementById('cringEl').style.strokeDasharray=`${circ*conf/100} ${circ}`;
+  document.getElementById('cringPct').setAttribute('fill',clr);document.getElementById('cringPct').textContent=conf+'%';
+  document.getElementById('cring').classList.add('show');
+  const ef=EXPLAIN[cls];if(ef){document.getElementById('aiText').textContent=ef(vals);document.getElementById('aibox').classList.add('show')}
+  document.getElementById('hudDist').textContent=`TARGET CLASSIFIED · ${cls.toUpperCase()}`;
+  document.getElementById('sb3').textContent=`LAST: ${cls} · ${conf}% · ${modelName||'?'}`;
+  const now=new Date(),ts=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+  scanHistory.unshift({ts,cls,conf,model:modelName||'?',css:meta.css,color:clr});
+  document.getElementById('histPanel').innerHTML=scanHistory.slice(0,8).map((h,i)=>`<div class="hi" style="animation-delay:${i*.03}s;border-left-color:${h.color}"><div class="hcls mono ${h.css}">${h.cls}</div><div class="hmeta mono">${h.ts} · ${h.model} · ${h.conf}% CONF</div></div>`).join('');
+}
+
+/* ══════════════════ OFFLINE SIM ══════════════════ */
+function offlineSim(vals,mag,rad){
+  const mN=parseInt(mag.replace('Category_','')||'9'),rN=parseInt(rad.replace('Category_','')||'9');
+  const [atm,tmp,grav,wat,min,orb,prx,acomp]=vals;
+  const s={0:()=>wat>.3&&atm>-.8?0:tmp<-1.8?6:7,1:()=>min>1?2:tmp<-2?6:wat>.5&&orb<1?0:4,2:()=>wat>.5&&atm>-1&&rN<10?0:tmp<-2.5?6:min>1.2?2:9,3:()=>grav>2.2||atm>2?4:wat>.3?0:tmp<-2?6:7,4:()=>{if(wat>.5&&atm>-1&&tmp>-2&&tmp<2&&rN<12)return 0;if(tmp>-1&&wat>0&&atm>-.5&&rN<14)return 1;if(min>1.5&&rN<13)return 2;if(grav>2.5||atm>2.5)return 4;if(tmp<-2.5)return 6;if(rN>13||mN<3)return 8;if(wat<-2)return 9;return 7},5:()=>atm>1.2&&wat>.2&&rN<11?0:min>1.2?2:tmp<-2?6:1,6:()=>wat>.4&&rN<12?0:tmp<-2?6:grav>2?4:9,7:()=>orb>1&&prx<-.5?3:wat>.4&&atm>-1?0:tmp<-1.5?6:9,8:()=>wat>.8&&tmp>-.5&&tmp<1?0:tmp<-2?6:rN>13?8:9,9:()=>wat>.5&&rN<11?0:atm>2?4:tmp<-2?6:min>1.2?2:9};
+  const idx=(s[activeModel]||s[4])();const clsKeys=Object.keys(CLASS_META);const clsName=clsKeys[idx]||'Toterahswelt';const meta=CLASS_META[clsName];
+  const baseAcc=liveModels[activeModel]?.metrics?.acc||72;const conf=Math.min(96,baseAcc-Math.floor(Math.random()*10));
+  showResult(clsName,meta.en,conf,meta.color,vals,MODEL_DEFS.find(m=>m.id===activeModel)?.name||'?',false);
+}
+
+function randomize(){
+  const sl=document.querySelectorAll('input[type=range]');
+  FEATURES.forEach((f,i)=>{const v=parseFloat((Math.random()*(f.max-f.min)+f.min).toFixed(2));sl[i].value=v;document.getElementById('sv'+i).textContent=v.toFixed(2)});
+  document.getElementById('magField').value=`Category_${Math.floor(Math.random()*16)}`;
+  document.getElementById('radLevel').value=`Category_${Math.floor(Math.random()*16)}`;
+  updateTele();setTimeout(runScan,60);
+}
+function updateStardate(){const d=new Date();document.getElementById('stardate').textContent=`STARDATE ${d.getFullYear()-100}.${String(Math.floor((d-new Date(d.getFullYear(),0,0))/86400000)).padStart(3,'0')}`}
+
+startBoot();
+</script>
+</body>
+</html>
