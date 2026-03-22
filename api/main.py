@@ -41,25 +41,16 @@ ML_DIR    = os.path.join(BASE, "..", "ml")
 MODEL_DIR = os.path.join(ML_DIR, "Model")
 DATA_DIR  = os.path.join(ML_DIR, "Dataset")
 
-# ── Auto-download from HuggingFace if files missing (for cloud deployment) ────
+# ── Auto-download from Google Drive if files missing ──────────────────────────
 def download_from_gdrive(file_id, dest_path):
-    """Download a file from Google Drive using its file ID."""
     import urllib.request, urllib.error
-
-    # Direct download URL for Google Drive
     url = f"https://drive.google.com/uc?export=download&id={file_id}"
-
     print(f"[GDRIVE] Downloading {os.path.basename(dest_path)} ...")
     try:
-        # First request — may get a virus scan warning page for large files
-        import urllib.request
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req) as response:
             content = response.read()
-
-        # Check if Google returned a virus scan warning (happens for large files)
         if b"Google Drive - Virus scan warning" in content or b"confirm=" in content[:2000]:
-            # Extract confirm token and retry
             import re
             confirm = re.search(rb"confirm=([0-9A-Za-z_]+)", content)
             if confirm:
@@ -69,15 +60,12 @@ def download_from_gdrive(file_id, dest_path):
                 with urllib.request.urlopen(req2) as r2:
                     content = r2.read()
             else:
-                # Try alternate direct download URL
                 url2 = f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t"
                 req2 = urllib.request.Request(url2, headers={"User-Agent": "Mozilla/5.0"})
                 with urllib.request.urlopen(req2) as r2:
                     content = r2.read()
-
         with open(dest_path, "wb") as f:
             f.write(content)
-
         size_kb = os.path.getsize(dest_path) // 1024
         print(f"[OK] {os.path.basename(dest_path)} downloaded ({size_kb} KB)")
         return True
@@ -87,28 +75,8 @@ def download_from_gdrive(file_id, dest_path):
 
 
 def ensure_files():
-    """
-    Check if ML files exist locally.
-    If not (running on cloud), download from Google Drive.
-
-    Set these environment variables on Railway:
-      GDRIVE_SVC_MODEL    = Google Drive file ID for best_svc_Model.pkl
-      GDRIVE_PIPELINE     = Google Drive file ID for num_pipeline.pkl
-      GDRIVE_MODEL_LR     = Google Drive file ID for model_lr.pkl
-      GDRIVE_MODEL_DT     = Google Drive file ID for model_dt.pkl
-      GDRIVE_MODEL_RF     = Google Drive file ID for model_rf.pkl
-      GDRIVE_MODEL_KNN    = Google Drive file ID for model_knn.pkl
-      GDRIVE_MODEL_XGB    = Google Drive file ID for model_xgb.pkl
-      GDRIVE_MODEL_GB     = Google Drive file ID for model_gb.pkl
-      GDRIVE_MODEL_ADA    = Google Drive file ID for model_ada.pkl
-      GDRIVE_MODEL_NB     = Google Drive file ID for model_nb.pkl
-      GDRIVE_MODEL_ET     = Google Drive file ID for model_et.pkl
-      GDRIVE_TRAIN_CSV    = Google Drive file ID for thermoracleTrain.csv
-    """
     os.makedirs(MODEL_DIR, exist_ok=True)
     os.makedirs(DATA_DIR, exist_ok=True)
-
-    # Map: (local filename, env var name)
     FILE_MAP = [
         (os.path.join(MODEL_DIR, "best_svc_Model.pkl"), "GDRIVE_SVC_MODEL"),
         (os.path.join(MODEL_DIR, "num_pipeline.pkl"),   "GDRIVE_PIPELINE"),
@@ -123,7 +91,6 @@ def ensure_files():
         (os.path.join(MODEL_DIR, "model_et.pkl"),       "GDRIVE_MODEL_ET"),
         (os.path.join(DATA_DIR,  "thermoracleTrain.csv"), "GDRIVE_TRAIN_CSV"),
     ]
-
     all_local = True
     for local_path, env_var in FILE_MAP:
         if os.path.exists(local_path):
@@ -135,24 +102,16 @@ def ensure_files():
                 download_from_gdrive(file_id, local_path)
             else:
                 print(f"[MISSING] {os.path.basename(local_path)} — set env var {env_var}")
-
     if all_local:
         print("[OK] All files found locally — no downloads needed")
 
 ensure_files()
 
-# ── EXACT label map from notebook ─────────────────────────────────────────────
+# ── Label maps ─────────────────────────────────────────────────────────────────
 LABEL_TO_PLANET = {
-    0: "Bewohnbar",
-    1: "Terraformierbar",
-    2: "Rohstoffreich",
-    3: "Wissenschaftlich",
-    4: "Gasriese",
-    5: "Wüstenplanet",
-    6: "Eiswelt",
-    7: "Toxischeatmosphäre",
-    8: "Hohestrahlung",
-    9: "Toterahswelt"
+    0: "Bewohnbar", 1: "Terraformierbar", 2: "Rohstoffreich",
+    3: "Wissenschaftlich", 4: "Gasriese", 5: "Wüstenplanet",
+    6: "Eiswelt", 7: "Toxischeatmosphäre", 8: "Hohestrahlung", 9: "Toterahswelt"
 }
 PLANET_TO_LABEL = {v: k for k, v in LABEL_TO_PLANET.items()}
 
@@ -169,14 +128,12 @@ CLASS_META = {
     "Toterahswelt":       {"en": "Dead World",       "color": "#7A8090", "icon": "○"},
 }
 
-# ── EXACT column order from notebook ──────────────────────────────────────────
 CATEGORICAL_COLS = ['Magnetic Field Strength', 'Radiation Levels']
 NUMERIC_BASE     = ['Atmospheric Density', 'Surface Temperature', 'Gravity',
                     'Water Content', 'Mineral Abundance', 'Orbital Period',
                     'Proximity to Star', 'Atmospheric Composition Index']
-NUM_COLS         = NUMERIC_BASE + CATEGORICAL_COLS   # exactly as in notebook cell 11
+NUM_COLS         = NUMERIC_BASE + CATEGORICAL_COLS
 
-# ── Extract number from Category_X string (exact notebook logic) ───────────────
 def extract_number(cat):
     if isinstance(cat, str):
         m = re.search(r'Category_(\d+)', cat)
@@ -187,15 +144,14 @@ def extract_number(cat):
 app = FastAPI(title="CIS-7 Cosmic Intelligence System")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# ── Shared state (updated by background thread) ────────────────────────────────
 state = {
-    "pipeline":      None,
-    "num_cols":      None,
-    "models":        {},        # id(int) → {"clf": ..., "metrics": {...}, "name": ...}
-    "status":        "BOOTING",
-    "log":           [],        # list of {"time": ..., "msg": ..., "level": ...}
-    "train_rows":    0,
-    "ready_count":   0,
+    "pipeline":    None,
+    "num_cols":    None,
+    "models":      {},
+    "status":      "BOOTING",
+    "log":         [],
+    "train_rows":  0,
+    "ready_count": 0,
 }
 
 def log(msg, level="INFO"):
@@ -204,13 +160,11 @@ def log(msg, level="INFO"):
     state["log"].append(entry)
     print(f"[{ts}] [{level}] {msg}")
 
-# ── BACKGROUND BOOT: loads pipeline + trains all 10 models ────────────────────
+# ── BACKGROUND BOOT ────────────────────────────────────────────────────────────
 def boot_system():
     import gc
-
     state["status"] = "LOADING_PIPELINE"
 
-    # ── 1. Load num_pipeline.pkl ──────────────────────────────────────────────
     pkl_path = os.path.join(MODEL_DIR, "num_pipeline.pkl")
     if not os.path.exists(pkl_path):
         log(f"num_pipeline.pkl not found at {pkl_path}", "ERROR")
@@ -225,7 +179,6 @@ def boot_system():
         log(f"Failed to load pipeline: {e}", "ERROR")
         state["status"] = "ERROR"; return
 
-    # ── 2. Load training data ─────────────────────────────────────────────────
     state["status"] = "LOADING_DATA"
     train_path = os.path.join(DATA_DIR, "thermoracleTrain.csv")
     if not os.path.exists(train_path):
@@ -238,7 +191,6 @@ def boot_system():
     state["train_rows"] = len(df)
     log(f"Dataset loaded · {len(df)} rows after dropping NaN targets")
 
-    # ── FIX: sample only 2000 rows before transforming to avoid OOM on cloud ──
     df = df.sample(n=min(2000, len(df)), random_state=42)
     log(f"Sampled {len(df)} rows for validation (memory-safe)")
 
@@ -249,36 +201,31 @@ def boot_system():
     df[num_cols] = pipeline.transform(df[num_cols])
     X = df[num_cols].values
     y = df["Prediction"].astype(int).values
-
-    # Free the dataframe immediately — we only need X, y arrays
     del df
     gc.collect()
 
-    # Use all 2000 rows as validation set (no need to split further)
     X_val = X.copy()
     y_val = y.copy()
     del X, y
     gc.collect()
-
     log(f"Validation set: {len(X_val)} rows for metrics")
 
-    # ── 3. All 10 model definitions ───────────────────────────────────────────
     import os as _os
     ON_CLOUD = _os.environ.get("RAILWAY_ENVIRONMENT") is not None or _os.environ.get("GDRIVE_SVC_MODEL") is not None
     njobs = 1 if ON_CLOUD else -1
     log(f"Running on {'cloud' if ON_CLOUD else 'local'} — n_jobs={njobs}")
 
     model_defs = [
-        (0, "Logistic Reg",   "model_lr.pkl",       LogisticRegression(max_iter=500, random_state=42)),
-        (1, "Decision Tree",  "model_dt.pkl",       DecisionTreeClassifier(max_depth=10, criterion="entropy", random_state=42)),
-        (2, "Random Forest",  "model_rf.pkl",       RandomForestClassifier(n_estimators=50, max_depth=8, random_state=42, n_jobs=njobs)),
-        (3, "KNN",            "model_knn.pkl",      KNeighborsClassifier(n_neighbors=5, weights="distance")),
-        (4, "SVC",            "best_svc_Model.pkl", None),
-        (5, "XGBoost",        "model_xgb.pkl",      _make_xgb()),
-        (6, "Grad. Boost",    "model_gb.pkl",       GradientBoostingClassifier(n_estimators=50, max_depth=3, random_state=42)),
-        (7, "AdaBoost",       "model_ada.pkl",      AdaBoostClassifier(n_estimators=50, random_state=42)),
-        (8, "Naive Bayes",    "model_nb.pkl",       GaussianNB()),
-        (9, "Extra Trees",    "model_et.pkl",       ExtraTreesClassifier(n_estimators=50, max_depth=8, random_state=42, n_jobs=njobs)),
+        (0, "Logistic Reg",  "model_lr.pkl",       LogisticRegression(max_iter=500, random_state=42)),
+        (1, "Decision Tree", "model_dt.pkl",       DecisionTreeClassifier(max_depth=10, criterion="entropy", random_state=42)),
+        (2, "Random Forest", "model_rf.pkl",       RandomForestClassifier(n_estimators=50, max_depth=8, random_state=42, n_jobs=njobs)),
+        (3, "KNN",           "model_knn.pkl",      KNeighborsClassifier(n_neighbors=5, weights="distance")),
+        (4, "SVC",           "best_svc_Model.pkl", None),
+        (5, "XGBoost",       "model_xgb.pkl",      _make_xgb()),
+        (6, "Grad. Boost",   "model_gb.pkl",       GradientBoostingClassifier(n_estimators=50, max_depth=3, random_state=42)),
+        (7, "AdaBoost",      "model_ada.pkl",      AdaBoostClassifier(n_estimators=50, random_state=42)),
+        (8, "Naive Bayes",   "model_nb.pkl",       GaussianNB()),
+        (9, "Extra Trees",   "model_et.pkl",       ExtraTreesClassifier(n_estimators=50, max_depth=8, random_state=42, n_jobs=njobs)),
     ]
 
     state["status"] = "LOADING_MODELS"
@@ -286,7 +233,6 @@ def boot_system():
 
     for mid, name, pkl_name, clf_template in model_defs:
         pkl_full = os.path.join(MODEL_DIR, pkl_name)
-
         if os.path.exists(pkl_full):
             try:
                 loaded_clf = joblib.load(pkl_full)
@@ -296,7 +242,7 @@ def boot_system():
                 state["models"][mid] = {"clf": loaded_clf, "metrics": m, "name": name, "ready": True}
                 state["ready_count"] += 1
                 log(f"{name} loaded · acc={m['acc']}%")
-                gc.collect()  # free any temporary memory after each model load
+                gc.collect()
             except Exception as e:
                 log(f"{name} failed to load: {e}", "WARN")
         else:
@@ -311,23 +257,20 @@ def _make_xgb():
         return XGBClassifier(n_estimators=100, max_depth=5, random_state=42,
                              use_label_encoder=False, eval_metric='mlogloss', n_jobs=-1)
     except ImportError:
-        log("xgboost not installed, using GradientBoosting for slot 5", "WARN")
         return GradientBoostingClassifier(n_estimators=100, max_depth=5, random_state=42)
 
 def _metrics(clf, X_val, y_val):
     preds = clf.predict(X_val)
-    acc   = round(accuracy_score(y_val, preds) * 100, 1)
-    prec  = round(precision_score(y_val, preds, average='weighted', zero_division=0) * 100, 1)
-    rec   = round(recall_score(y_val, preds, average='weighted', zero_division=0) * 100, 1)
-    f1    = round(f1_score(y_val, preds, average='weighted', zero_division=0) * 100, 1)
+    acc  = round(accuracy_score(y_val, preds) * 100, 1)
+    prec = round(precision_score(y_val, preds, average='weighted', zero_division=0) * 100, 1)
+    rec  = round(recall_score(y_val, preds, average='weighted', zero_division=0) * 100, 1)
+    f1   = round(f1_score(y_val, preds, average='weighted', zero_division=0) * 100, 1)
     return {"acc": acc, "prec": prec, "rec": rec, "f1": f1}
 
-# Start boot in background thread
 threading.Thread(target=boot_system, daemon=True).start()
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
 class PredictRequest(BaseModel):
-    # 8 numeric features + 2 categorical (pass raw Category_X strings OR floats)
     atmo_density:   float
     surface_temp:   float
     gravity:        float
@@ -336,32 +279,29 @@ class PredictRequest(BaseModel):
     orbital_period: float
     prox_to_star:   float
     atmo_comp:      float
-    mag_field:      str   # e.g. "Category_9" or "9"
-    radiation:      str   # e.g. "Category_8" or "8"
+    mag_field:      str
+    radiation:      str
     model_id:       Optional[int] = 4
-    model_config = {
-        "protected_namespaces": ()
-    }
+    model_config = {"protected_namespaces": ()}
 
-# ── /health ────────────────────────────────────────────────────────────────────
+# ── /health — always returns 200 instantly so Railway healthcheck never fails ──
 @app.get("/health")
 def health():
     return {
         "status":      state["status"],
+        "ready":       True,           # always True — tells Railway server is alive
         "ready_count": state["ready_count"],
         "models":      {k: {"name": v["name"], "acc": v["metrics"]["acc"]}
                         for k, v in state["models"].items()},
         "train_rows":  state["train_rows"],
     }
 
-# ── /status (SSE stream for real-time log) ─────────────────────────────────────
+# ── /status-stream (SSE) ───────────────────────────────────────────────────────
 @app.get("/status-stream")
 async def status_stream():
-    """Server-Sent Events: streams boot log + status to frontend in real time."""
     async def generate():
         sent = 0
         while True:
-            # Send any new log entries
             while sent < len(state["log"]):
                 entry = state["log"][sent]
                 data = json.dumps({"type": "log", **entry,
@@ -369,7 +309,6 @@ async def status_stream():
                                    "ready": state["ready_count"]})
                 yield f"data: {data}\n\n"
                 sent += 1
-            # Send heartbeat
             hb = json.dumps({"type": "hb", "status": state["status"],
                              "ready": state["ready_count"]})
             yield f"data: {hb}\n\n"
@@ -394,16 +333,14 @@ def predict(req: PredictRequest):
         raise HTTPException(503, "Pipeline not loaded yet")
 
     mid = req.model_id
-    # -1 = pick best available model by accuracy
     if mid == -1 or mid not in state["models"]:
         ready = [k for k in state["models"] if state["models"][k]["ready"]]
         if not ready:
-            raise HTTPException(503, "No models ready yet — still training")
+            raise HTTPException(503, "No models ready yet — still loading")
         mid = max(ready, key=lambda k: state["models"][k]["metrics"]["acc"])
 
     clf = state["models"][mid]["clf"]
 
-    # Build row in exact notebook column order
     row = {
         "Atmospheric Density":           req.atmo_density,
         "Surface Temperature":           req.surface_temp,
@@ -422,14 +359,13 @@ def predict(req: PredictRequest):
     pred_int = int(clf.predict(X_scaled)[0])
     pred_str = LABEL_TO_PLANET.get(pred_int, str(pred_int))
 
-    # Confidence
     try:
         proba = clf.predict_proba(X_scaled)[0]
         conf  = round(float(proba.max()) * 100, 1)
     except AttributeError:
         try:
             df_val = clf.decision_function(X_scaled)[0]
-            score  = float(np.max(np.abs(df_val))) if hasattr(df_val,"__len__") else float(abs(df_val))
+            score  = float(np.max(np.abs(df_val))) if hasattr(df_val, "__len__") else float(abs(df_val))
             conf   = round(min(99.0, 55 + score * 10), 1)
         except Exception:
             conf = state["models"][mid]["metrics"]["acc"]
