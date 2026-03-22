@@ -331,6 +331,9 @@ class PredictRequest(BaseModel):
     mag_field:      str   # e.g. "Category_9" or "9"
     radiation:      str   # e.g. "Category_8" or "8"
     model_id:       Optional[int] = 4
+    model_config = {
+        "protected_namespaces": ()
+    }
 
 # ── /health ────────────────────────────────────────────────────────────────────
 @app.get("/health")
