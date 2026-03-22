@@ -248,17 +248,23 @@ def boot_system():
 
     # ── 3. All 10 model definitions (equal treatment — no SVC special casing) ─
     # Saved pkl name for each model (if exists, load it; otherwise train & save)
+    # Use n_jobs=1 on cloud to avoid memory crashes — n_jobs=-1 uses all cores and OOMs
+    import os as _os
+    ON_CLOUD = _os.environ.get("RAILWAY_ENVIRONMENT") is not None or _os.environ.get("GDRIVE_SVC_MODEL") is not None
+    njobs = 1 if ON_CLOUD else -1
+    log(f"Running on {'cloud' if ON_CLOUD else 'local'} — n_jobs={njobs}")
+
     model_defs = [
         (0, "Logistic Reg",   "model_lr.pkl",   LogisticRegression(max_iter=500, random_state=42)),
         (1, "Decision Tree",  "model_dt.pkl",   DecisionTreeClassifier(max_depth=10, criterion="entropy", random_state=42)),
-        (2, "Random Forest",  "model_rf.pkl",   RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42, n_jobs=-1)),
+        (2, "Random Forest",  "model_rf.pkl",   RandomForestClassifier(n_estimators=50, max_depth=8, random_state=42, n_jobs=njobs)),
         (3, "KNN",            "model_knn.pkl",  KNeighborsClassifier(n_neighbors=5, weights="distance")),
-        (4, "SVC",            "best_svc_Model.pkl", None),   # always load from your pkl
+        (4, "SVC",            "best_svc_Model.pkl", None),
         (5, "XGBoost",        "model_xgb.pkl",  _make_xgb()),
-        (6, "Grad. Boost",    "model_gb.pkl",   GradientBoostingClassifier(n_estimators=100, max_depth=5, random_state=42)),
-        (7, "AdaBoost",       "model_ada.pkl",  AdaBoostClassifier(n_estimators=100, random_state=42)),
+        (6, "Grad. Boost",    "model_gb.pkl",   GradientBoostingClassifier(n_estimators=50, max_depth=3, random_state=42)),
+        (7, "AdaBoost",       "model_ada.pkl",  AdaBoostClassifier(n_estimators=50, random_state=42)),
         (8, "Naive Bayes",    "model_nb.pkl",   GaussianNB()),
-        (9, "Extra Trees",    "model_et.pkl",   ExtraTreesClassifier(n_estimators=100, max_depth=10, random_state=42, n_jobs=-1)),
+        (9, "Extra Trees",    "model_et.pkl",   ExtraTreesClassifier(n_estimators=50, max_depth=8, random_state=42, n_jobs=njobs)),
     ]
 
     state["status"] = "LOADING_MODELS"
