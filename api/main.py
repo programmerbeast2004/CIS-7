@@ -243,8 +243,13 @@ def boot_system():
     df[num_cols] = pipeline.transform(df[num_cols])
     X = df[num_cols].values
     y = df["Prediction"].astype(int).values
-    X_tr, X_val, y_tr, y_val = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
-    log(f"Train/val split: {len(X_tr)} train / {len(X_val)} val")
+    # Only need a small validation set for metrics — no training happens on cloud
+    from sklearn.model_selection import train_test_split as _tts
+    _, X_val, _, y_val = _tts(X, y, test_size=0.1, random_state=42, stratify=y)
+    log(f"Validation set: {len(X_val)} rows for metrics")
+    # Free training data from memory immediately
+    del X, y, df
+    import gc; gc.collect()
 
     # ── 3. All 10 model definitions (equal treatment — no SVC special casing) ─
     # Saved pkl name for each model (if exists, load it; otherwise train & save)
@@ -268,50 +273,26 @@ def boot_system():
     ]
 
     state["status"] = "LOADING_MODELS"
+    log("Loading all models from pkl files — no training needed")
 
     for mid, name, pkl_name, clf_template in model_defs:
         pkl_full = os.path.join(MODEL_DIR, pkl_name)
-        loaded_clf = None
 
-        # Try loading from saved pkl first
         if os.path.exists(pkl_full):
             try:
                 loaded_clf = joblib.load(pkl_full)
-                # For SVC the pkl IS the model directly
-                # For others it might be a tuple (model, meta) — handle both
                 if isinstance(loaded_clf, tuple):
                     loaded_clf = loaded_clf[0]
-                m = _metrics(loaded_clf, X_val, y_val)
+                # Get metrics without heavy computation — use small sample
+                sample_size = min(5000, len(X_val))
+                m = _metrics(loaded_clf, X_val[:sample_size], y_val[:sample_size])
                 state["models"][mid] = {"clf": loaded_clf, "metrics": m, "name": name, "ready": True}
                 state["ready_count"] += 1
-                log(f"{name} loaded from pkl · acc={m['acc']}%")
-                continue
+                log(f"{name} loaded · acc={m['acc']}%")
             except Exception as e:
-                log(f"{name} pkl load failed ({e}) — will retrain", "WARN")
-                loaded_clf = None
-
-        # No pkl or load failed — train from scratch
-        if clf_template is None:
-            log(f"{name}: pkl not found at {pkl_full} and no template — skipping", "WARN")
-            continue
-
-        state["status"] = f"TRAINING_{name.upper().replace(' ', '_')}"
-        log(f"Training {name} …")
-        t0 = time.time()
-        try:
-            clf_template.fit(X_tr, y_tr)
-            m = _metrics(clf_template, X_val, y_val)
-            state["models"][mid] = {"clf": clf_template, "metrics": m, "name": name, "ready": True}
-            state["ready_count"] += 1
-            log(f"{name} trained · acc={m['acc']}% · {time.time()-t0:.1f}s")
-            # Save for next run so it loads instantly
-            try:
-                joblib.dump(clf_template, pkl_full)
-                log(f"{name} saved to {pkl_name}")
-            except Exception as e:
-                log(f"Could not save {name}: {e}", "WARN")
-        except Exception as e:
-            log(f"{name} training failed: {e}", "WARN")
+                log(f"{name} failed to load: {e}", "WARN")
+        else:
+            log(f"{name} pkl not found at {pkl_full} — skipping", "WARN")
 
     state["status"] = "READY"
     log(f"All {len(state['models'])} models ready · System online", "SUCCESS")
