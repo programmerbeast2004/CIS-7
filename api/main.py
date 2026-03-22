@@ -206,6 +206,8 @@ def log(msg, level="INFO"):
 
 # ── BACKGROUND BOOT: loads pipeline + trains all 10 models ────────────────────
 def boot_system():
+    import gc
+
     state["status"] = "LOADING_PIPELINE"
 
     # ── 1. Load num_pipeline.pkl ──────────────────────────────────────────────
@@ -236,6 +238,10 @@ def boot_system():
     state["train_rows"] = len(df)
     log(f"Dataset loaded · {len(df)} rows after dropping NaN targets")
 
+    # ── FIX: sample only 2000 rows before transforming to avoid OOM on cloud ──
+    df = df.sample(n=min(2000, len(df)), random_state=42)
+    log(f"Sampled {len(df)} rows for validation (memory-safe)")
+
     for col in CATEGORICAL_COLS:
         if df[col].dtype == object:
             df[col] = df[col].apply(extract_number)
@@ -243,33 +249,36 @@ def boot_system():
     df[num_cols] = pipeline.transform(df[num_cols])
     X = df[num_cols].values
     y = df["Prediction"].astype(int).values
-    # Only need a small validation set for metrics — no training happens on cloud
-    from sklearn.model_selection import train_test_split as _tts
-    _, X_val, _, y_val = _tts(X, y, test_size=0.1, random_state=42, stratify=y)
-    log(f"Validation set: {len(X_val)} rows for metrics")
-    # Free training data from memory immediately
-    del X, y, df
-    import gc; gc.collect()
 
-    # ── 3. All 10 model definitions (equal treatment — no SVC special casing) ─
-    # Saved pkl name for each model (if exists, load it; otherwise train & save)
-    # Use n_jobs=1 on cloud to avoid memory crashes — n_jobs=-1 uses all cores and OOMs
+    # Free the dataframe immediately — we only need X, y arrays
+    del df
+    gc.collect()
+
+    # Use all 2000 rows as validation set (no need to split further)
+    X_val = X.copy()
+    y_val = y.copy()
+    del X, y
+    gc.collect()
+
+    log(f"Validation set: {len(X_val)} rows for metrics")
+
+    # ── 3. All 10 model definitions ───────────────────────────────────────────
     import os as _os
     ON_CLOUD = _os.environ.get("RAILWAY_ENVIRONMENT") is not None or _os.environ.get("GDRIVE_SVC_MODEL") is not None
     njobs = 1 if ON_CLOUD else -1
     log(f"Running on {'cloud' if ON_CLOUD else 'local'} — n_jobs={njobs}")
 
     model_defs = [
-        (0, "Logistic Reg",   "model_lr.pkl",   LogisticRegression(max_iter=500, random_state=42)),
-        (1, "Decision Tree",  "model_dt.pkl",   DecisionTreeClassifier(max_depth=10, criterion="entropy", random_state=42)),
-        (2, "Random Forest",  "model_rf.pkl",   RandomForestClassifier(n_estimators=50, max_depth=8, random_state=42, n_jobs=njobs)),
-        (3, "KNN",            "model_knn.pkl",  KNeighborsClassifier(n_neighbors=5, weights="distance")),
+        (0, "Logistic Reg",   "model_lr.pkl",       LogisticRegression(max_iter=500, random_state=42)),
+        (1, "Decision Tree",  "model_dt.pkl",       DecisionTreeClassifier(max_depth=10, criterion="entropy", random_state=42)),
+        (2, "Random Forest",  "model_rf.pkl",       RandomForestClassifier(n_estimators=50, max_depth=8, random_state=42, n_jobs=njobs)),
+        (3, "KNN",            "model_knn.pkl",      KNeighborsClassifier(n_neighbors=5, weights="distance")),
         (4, "SVC",            "best_svc_Model.pkl", None),
-        (5, "XGBoost",        "model_xgb.pkl",  _make_xgb()),
-        (6, "Grad. Boost",    "model_gb.pkl",   GradientBoostingClassifier(n_estimators=50, max_depth=3, random_state=42)),
-        (7, "AdaBoost",       "model_ada.pkl",  AdaBoostClassifier(n_estimators=50, random_state=42)),
-        (8, "Naive Bayes",    "model_nb.pkl",   GaussianNB()),
-        (9, "Extra Trees",    "model_et.pkl",   ExtraTreesClassifier(n_estimators=50, max_depth=8, random_state=42, n_jobs=njobs)),
+        (5, "XGBoost",        "model_xgb.pkl",      _make_xgb()),
+        (6, "Grad. Boost",    "model_gb.pkl",       GradientBoostingClassifier(n_estimators=50, max_depth=3, random_state=42)),
+        (7, "AdaBoost",       "model_ada.pkl",      AdaBoostClassifier(n_estimators=50, random_state=42)),
+        (8, "Naive Bayes",    "model_nb.pkl",       GaussianNB()),
+        (9, "Extra Trees",    "model_et.pkl",       ExtraTreesClassifier(n_estimators=50, max_depth=8, random_state=42, n_jobs=njobs)),
     ]
 
     state["status"] = "LOADING_MODELS"
@@ -283,12 +292,11 @@ def boot_system():
                 loaded_clf = joblib.load(pkl_full)
                 if isinstance(loaded_clf, tuple):
                     loaded_clf = loaded_clf[0]
-                # Get metrics without heavy computation — use small sample
-                sample_size = min(5000, len(X_val))
-                m = _metrics(loaded_clf, X_val[:sample_size], y_val[:sample_size])
+                m = _metrics(loaded_clf, X_val, y_val)
                 state["models"][mid] = {"clf": loaded_clf, "metrics": m, "name": name, "ready": True}
                 state["ready_count"] += 1
                 log(f"{name} loaded · acc={m['acc']}%")
+                gc.collect()  # free any temporary memory after each model load
             except Exception as e:
                 log(f"{name} failed to load: {e}", "WARN")
         else:
@@ -397,16 +405,16 @@ def predict(req: PredictRequest):
 
     # Build row in exact notebook column order
     row = {
-        "Atmospheric Density":         req.atmo_density,
-        "Surface Temperature":         req.surface_temp,
-        "Gravity":                     req.gravity,
-        "Water Content":               req.water_content,
-        "Mineral Abundance":           req.mineral_abund,
-        "Orbital Period":              req.orbital_period,
-        "Proximity to Star":           req.prox_to_star,
+        "Atmospheric Density":           req.atmo_density,
+        "Surface Temperature":           req.surface_temp,
+        "Gravity":                       req.gravity,
+        "Water Content":                 req.water_content,
+        "Mineral Abundance":             req.mineral_abund,
+        "Orbital Period":                req.orbital_period,
+        "Proximity to Star":             req.prox_to_star,
         "Atmospheric Composition Index": req.atmo_comp,
-        "Magnetic Field Strength":     extract_number(req.mag_field),
-        "Radiation Levels":            extract_number(req.radiation),
+        "Magnetic Field Strength":       extract_number(req.mag_field),
+        "Radiation Levels":              extract_number(req.radiation),
     }
     df_row = pd.DataFrame([row])[state["num_cols"]]
     X_scaled = pipeline.transform(df_row)
