@@ -191,7 +191,7 @@ def boot_system():
     state["train_rows"] = len(df)
     log(f"Dataset loaded · {len(df)} rows after dropping NaN targets")
 
-    df = df.sample(n=min(2000, len(df)), random_state=42)
+    df = df.sample(n=min(300, len(df)), random_state=42)
     log(f"Sampled {len(df)} rows for validation (memory-safe)")
 
     for col in CATEGORICAL_COLS:
